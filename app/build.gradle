@@ -10,7 +10,7 @@ android {
     defaultConfig {
         applicationId "com.antigravity.redirector"
         minSdk 24
-        targetSdk 34
+        targetSdk 33
         versionCode 1
         versionName "1.0"
 
@@ -36,7 +36,7 @@ android {
         compose true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion '1.5.1'
+        kotlinCompilerExtensionVersion '1.5.0'
     }
     packagingOptions {
         resources {

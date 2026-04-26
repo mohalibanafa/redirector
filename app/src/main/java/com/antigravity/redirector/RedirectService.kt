@@ -8,15 +8,15 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpHandler
-import com.sun.net.httpserver.HttpServer
-import java.net.InetSocketAddress
-import java.util.concurrent.Executors
+import java.io.OutputStream
+import java.net.ServerSocket
+import java.net.Socket
+import kotlin.concurrent.thread
 
 class RedirectService : Service() {
 
-    private var server: HttpServer? = null
+    private var serverSocket: ServerSocket? = null
+    private var isRunning = false
     private val CHANNEL_ID = "RedirectServiceChannel"
 
     companion object {
@@ -42,26 +42,36 @@ class RedirectService : Service() {
     }
 
     private fun startServer() {
-        if (server == null) {
+        if (isRunning) return
+        isRunning = true
+        thread {
             try {
-                server = HttpServer.create(InetSocketAddress(PORT), 0)
-                server?.createContext("/", RedirectHandler())
-                server?.executor = Executors.newCachedThreadPool()
-                server?.start()
+                serverSocket = ServerSocket(PORT)
+                serverSocket?.reuseAddress = true
+                while (isRunning) {
+                    val socket = serverSocket?.accept()
+                    if (socket != null) {
+                        thread { handleClient(socket) }
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
     }
 
-    private class RedirectHandler : HttpHandler {
-        override fun handle(t: HttpExchange) {
-            val response = "Redirecting to $targetUrl..."
-            t.responseHeaders.set("Location", targetUrl)
-            t.sendResponseHeaders(301, response.length.toLong())
-            val os = t.responseBody
-            os.write(response.toByteArray())
-            os.close()
+    private fun handleClient(socket: Socket) {
+        try {
+            val output: OutputStream = socket.getOutputStream()
+            // Standard HTTP 301 Redirect Response
+            val response = "HTTP/1.1 301 Moved Permanently\r\n" +
+                    "Location: $targetUrl\r\n" +
+                    "Connection: close\r\n\r\n"
+            output.write(response.toByteArray())
+            output.flush()
+            socket.close()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -86,7 +96,12 @@ class RedirectService : Service() {
     }
 
     override fun onDestroy() {
-        server?.stop(0)
+        isRunning = false
+        try {
+            serverSocket?.close()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         super.onDestroy()
     }
 
