@@ -1,0 +1,2 @@
+rootProject.name = "RedirectorMaster"
+include ':app'
