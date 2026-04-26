@@ -20,7 +20,7 @@ source.include_exts = py,png,jpg,kv,atlas
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,flet
+requirements = python3,flet,openssl,sqlite3,hostpython3
 
 # (str) Custom source folders for requirements
 # packagename == path_to_parent_dir_of_package
