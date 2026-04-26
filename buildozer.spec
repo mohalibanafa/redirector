@@ -42,6 +42,11 @@ android.permissions = INTERNET, ACCESS_NETWORK_STATE
 # (int) Android API to use
 android.api = 33
 
+# (bool) If True, then skip the acknowledgment of the Android SDK license
+# agreement. This should only be used if you have itself accepted the
+# agreement.
+android.accept_sdk_license = True
+
 # (int) Minimum API your APK will support.
 android.minapi = 21
 
