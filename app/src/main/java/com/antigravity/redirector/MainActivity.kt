@@ -33,14 +33,26 @@ import java.util.*
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        var initialTargetUrl = "127.0.0.1:5000"
+        
+        // استلام الروابط في حال استخدمت قائمة المشاركة
+        if (Intent.ACTION_SEND == intent.action && "text/plain" == intent.type) {
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { sharedText ->
+                initialTargetUrl = sharedText
+            }
+        }
+
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
                     primary = Color(0xFF00E5FF),
-                    background = Color(0xFF121212)
+                    background = Color.Transparent // لتفعيل الواجهة العائمة
                 )
             ) {
-                RedirectorApp()
+                RedirectorDialogApp(initialTargetUrl) {
+                    finish() // لإغلاق النافذة العائمة
+                }
             }
         }
     }
@@ -48,126 +60,144 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RedirectorApp() {
+fun RedirectorDialogApp(initialTargetUrl: String, onClose: () -> Unit) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     
-    var targetUrl by remember { mutableStateOf("https://google.com") }
+    var targetUrl by remember { mutableStateOf(initialTargetUrl) }
+    var listenPort by remember { mutableStateOf("8080") }
     var isRunning by remember { mutableStateOf(false) }
     var localIp by remember { mutableStateOf(getLocalIpAddress()) }
-    val redirectLink = "http://$localIp:8080"
+    
+    val redirectLink = "http://$localIp:${listenPort.toIntOrNull() ?: 8080}"
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(Color(0xFF1A237E), Color(0xFF121212))
-                )
-            )
-            .padding(24.dp),
+            .background(Color.Black.copy(alpha = 0.6f)),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+        Card(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(32.dp))
-                .background(Color.White.copy(alpha = 0.05f))
-                .padding(32.dp)
+                .fillMaxWidth(0.9f)
+                .wrapContentHeight(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
         ) {
-            Icon(
-                imageVector = Icons.Default.Language,
-                contentDescription = null,
-                tint = Color(0xFF00E5FF),
-                modifier = Modifier.size(64.dp)
-            )
-
-            Text(
-                text = "مُوجه المواقع Native",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-
-            OutlinedTextField(
-                value = targetUrl,
-                onValueChange = { targetUrl = it },
-                label = { Text("الرابط المستهدف") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = TextFieldDefaults.outlinedTextFieldColors(
-                    focusedBorderColor = Color(0xFF00E5FF),
-                    unfocusedBorderColor = Color.Gray,
-                    containerColor = Color.Black.copy(alpha = 0.3f)
-                )
-            )
-
-            Button(
-                onClick = {
-                    val intent = Intent(context, RedirectService::class.java).apply {
-                        putExtra("TARGET_URL", targetUrl)
-                    }
-                    if (isRunning) {
-                        context.stopService(intent)
-                    } else {
-                        context.startForegroundService(intent)
-                    }
-                    isRunning = !isRunning
-                    localIp = getLocalIpAddress()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRunning) Color.Red.copy(alpha = 0.7f) else Color(0xFF00E5FF),
-                    contentColor = Color.Black
-                )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(24.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        if (isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = null
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (isRunning) "إيقاف التوجيه" else "بدء التوجيه",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+                Icon(
+                    imageVector = Icons.Default.Language,
+                    contentDescription = null,
+                    tint = Color(0xFF00E5FF),
+                    modifier = Modifier.size(48.dp)
+                )
 
-            if (isRunning) {
-                Card(
+                Text(
+                    text = "إعدادات البث السريع",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                OutlinedTextField(
+                    value = targetUrl,
+                    onValueChange = { targetUrl = it },
+                    label = { Text("المصدر (مثال: 127.0.0.1:5000)") },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        focusedBorderColor = Color(0xFF00E5FF),
+                        unfocusedBorderColor = Color.Gray,
+                    )
+                )
+                
+                OutlinedTextField(
+                    value = listenPort,
+                    onValueChange = { listenPort = it },
+                    label = { Text("منفذ البث الخارجي") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        focusedBorderColor = Color(0xFF00E5FF),
+                        unfocusedBorderColor = Color.Gray,
+                    )
+                )
+
+                Button(
+                    onClick = {
+                        val portInt = listenPort.toIntOrNull() ?: 8080
+                        val intent = Intent(context, RedirectService::class.java).apply {
+                            putExtra("TARGET_URL", targetUrl)
+                            putExtra("LISTEN_PORT", portInt)
+                        }
+                        if (isRunning) {
+                            context.stopService(intent)
+                        } else {
+                            context.startForegroundService(intent)
+                        }
+                        isRunning = !isRunning
+                        localIp = getLocalIpAddress()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isRunning) Color.Red.copy(alpha = 0.8f) else Color(0xFF00E5FF),
+                        contentColor = Color.Black
+                    )
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            contentDescription = null
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (isRunning) "إيقاف البث" else "بدء البث للشبكة",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                if (isRunning) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("الرابط المباشر للمشاركة:", color = Color.Gray, fontSize = 14.sp)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.fillMaxWidth()
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(
-                                text = redirectLink,
-                                color = Color(0xFF00E5FF),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
-                            )
-                            IconButton(onClick = {
-                                clipboardManager.setText(AnnotatedString(redirectLink))
-                            }) {
-                                Icon(Icons.Default.ContentCopy, "نسخ", tint = Color.White)
+                            Text("الرابط المتاح للأجهزة الأخرى:", color = Color.Gray, fontSize = 12.sp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = redirectLink,
+                                    color = Color(0xFF00E5FF),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                                IconButton(onClick = {
+                                    clipboardManager.setText(AnnotatedString(redirectLink))
+                                }) {
+                                    Icon(Icons.Default.ContentCopy, "نسخ", tint = Color.White)
+                                }
                             }
                         }
                     }
+                }
+
+                TextButton(onClick = onClose) {
+                    Text("إغلاق وإخفاء في الخلفية", color = Color.Gray)
                 }
             }
         }
