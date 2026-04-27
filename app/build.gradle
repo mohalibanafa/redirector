@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.antigravity.redirector'
+    namespace 'com.antigravity.budget'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.antigravity.redirector"
+        applicationId "com.antigravity.budget"
         minSdk 24
         targetSdk 33
         versionCode 1
