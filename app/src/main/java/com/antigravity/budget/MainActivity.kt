@@ -263,7 +263,15 @@ fun getCurrentDateTime(): String {
 // استيراد من إكسل
 fun importExcel(context: Context, uri: Uri, transactions: MutableList<Transaction>) {
     try {
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+        // تهيئة خصائص قراءة XML لأندرويد لتجنب NoClassDefFoundError
+        System.setProperty("org.apache.poi.javax.xml.stream.XMLInputFactory", "com.fasterxml.aalto.stax.InputFactoryImpl")
+        System.setProperty("org.apache.poi.javax.xml.stream.XMLOutputFactory", "com.fasterxml.aalto.stax.OutputFactoryImpl")
+        System.setProperty("org.apache.poi.javax.xml.stream.XMLEventFactory", "com.fasterxml.aalto.stax.EventFactoryImpl")
+        System.setProperty("javax.xml.stream.XMLInputFactory", "com.fasterxml.aalto.stax.InputFactoryImpl")
+        System.setProperty("javax.xml.stream.XMLOutputFactory", "com.fasterxml.aalto.stax.OutputFactoryImpl")
+        System.setProperty("javax.xml.stream.XMLEventFactory", "com.fasterxml.aalto.stax.EventFactoryImpl")
+
+        context.contentResolver.openInputStream(uri)?.buffered()?.use { inputStream ->
             val workbook = org.apache.poi.xssf.usermodel.XSSFWorkbook(inputStream)
             val sheet = workbook.getSheetAt(0)
             var count = 0
@@ -273,10 +281,19 @@ fun importExcel(context: Context, uri: Uri, transactions: MutableList<Transactio
             
             while (rowIterator.hasNext()) {
                 val row = rowIterator.next()
-                if (row.lastCellNum >= 6) {
+                if (row != null && row.physicalNumberOfCells > 0) {
                     val category = row.getCell(0)?.toString() ?: ""
+                    if (category.isBlank()) continue // تخطي الصفوف الفارغة
+
                     val currency = row.getCell(1)?.toString() ?: ""
-                    val amount = row.getCell(2)?.toString()?.toDoubleOrNull() ?: 0.0
+                    
+                    val amountCell = row.getCell(2)
+                    val amount = if (amountCell?.cellType == org.apache.poi.ss.usermodel.CellType.NUMERIC) {
+                        amountCell.numericCellValue
+                    } else {
+                        amountCell?.toString()?.toDoubleOrNull() ?: 0.0
+                    }
+                    
                     val type = row.getCell(3)?.toString() ?: ""
                     val note = row.getCell(4)?.toString() ?: ""
                     val date = row.getCell(5)?.toString() ?: ""
@@ -290,6 +307,8 @@ fun importExcel(context: Context, uri: Uri, transactions: MutableList<Transactio
         }
     } catch (e: Exception) {
         Toast.makeText(context, "خطأ في الاستيراد: ${e.message}", Toast.LENGTH_LONG).show()
+    } catch (e: Throwable) {
+        Toast.makeText(context, "خطأ غير متوقع: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
 
