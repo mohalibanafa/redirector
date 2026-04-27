@@ -25,6 +25,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.apache.poi.ss.usermodel.*
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import java.io.InputStream
+import java.io.OutputStream
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -64,15 +68,6 @@ fun BudgetAppTheme(content: @Composable () -> Unit) {
         content = content
     )
 }
-
-import org.apache.poi.ss.usermodel.Row
-import org.apache.poi.ss.usermodel.Sheet
-import org.apache.poi.ss.usermodel.Workbook
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import java.io.InputStream
-import java.io.OutputStream
-
-// ... (existing Transaction and Activity setup remains similar but with new logic)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
