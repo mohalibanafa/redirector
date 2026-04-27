@@ -65,6 +65,15 @@ fun BudgetAppTheme(content: @Composable () -> Unit) {
     )
 }
 
+import org.apache.poi.ss.usermodel.Row
+import org.apache.poi.ss.usermodel.Sheet
+import org.apache.poi.ss.usermodel.Workbook
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import java.io.InputStream
+import java.io.OutputStream
+
+// ... (existing Transaction and Activity setup remains similar but with new logic)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BudgetMainScreen() {
@@ -74,26 +83,26 @@ fun BudgetMainScreen() {
     var note by remember { mutableStateOf("") }
     var transactions = remember { mutableStateListOf<Transaction>() }
     
-    // مشغل اختيار ملف للاستيراد
+    // مشغل اختيار ملف للاستيراد (Excel)
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri ->
-            uri?.let { importCsv(context, it, transactions) }
+            uri?.let { importExcel(context, it, transactions) }
         }
     )
 
-    // مشغل حفظ ملف للتصدير
+    // مشغل حفظ ملف للتصدير (Excel)
     val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/csv"),
+        contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         onResult = { uri ->
-            uri?.let { exportCsv(context, it, transactions) }
+            uri?.let { exportExcel(context, it, transactions) }
         }
     )
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("مدير الميزانية الشخصية", fontWeight = FontWeight.Bold) },
+                title = { Text("مدير الميزانية (Excel)", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = Color(0xFF1E1E1E)
                 )
@@ -157,16 +166,9 @@ fun BudgetMainScreen() {
                         Button(
                             onClick = {
                                 if (validateInput(category, amount)) {
-                                    val t = Transaction(
-                                        category = category,
-                                        currency = "SAR",
-                                        amount = amount.toDouble(),
-                                        type = "الدخل",
-                                        note = note,
-                                        date = getCurrentDateTime()
-                                    )
+                                    val t = Transaction(category, "SAR", amount.toDouble(), "الدخل", note, getCurrentDateTime())
                                     transactions.add(t)
-                                    clearFields { category = ""; amount = ""; note = "" }
+                                    category = ""; amount = ""; note = ""
                                     Toast.makeText(context, "تمت إضافة الدخل", Toast.LENGTH_SHORT).show()
                                 }
                             },
@@ -181,16 +183,9 @@ fun BudgetMainScreen() {
                         Button(
                             onClick = {
                                 if (validateInput(category, amount)) {
-                                    val t = Transaction(
-                                        category = category,
-                                        currency = "SAR",
-                                        amount = -(amount.toDouble()),
-                                        type = "النفقات",
-                                        note = note,
-                                        date = getCurrentDateTime()
-                                    )
+                                    val t = Transaction(category, "SAR", -(amount.toDouble()), "النفقات", note, getCurrentDateTime())
                                     transactions.add(t)
-                                    clearFields { category = ""; amount = ""; note = "" }
+                                    category = ""; amount = ""; note = ""
                                     Toast.makeText(context, "تمت إضافة الصرف", Toast.LENGTH_SHORT).show()
                                 }
                             },
@@ -213,14 +208,13 @@ fun BudgetMainScreen() {
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedButton(
-                    onClick = { importLauncher.launch(arrayOf("text/*", "application/octet-stream")) },
+                    onClick = { importLauncher.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) },
                     modifier = Modifier.weight(1f).height(56.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(width = 1.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.FileUpload, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("استيراد CSV")
+                    Text("استيراد Excel")
                 }
 
                 Button(
@@ -228,7 +222,7 @@ fun BudgetMainScreen() {
                         if (transactions.isEmpty()) {
                             Toast.makeText(context, "لا توجد بيانات لتصديرها", Toast.LENGTH_SHORT).show()
                         } else {
-                            exportLauncher.launch("report_${System.currentTimeMillis()}.csv")
+                            exportLauncher.launch("budget_report_${System.currentTimeMillis()}.xlsx")
                         }
                     },
                     modifier = Modifier.weight(1f).height(56.dp),
@@ -237,7 +231,7 @@ fun BudgetMainScreen() {
                 ) {
                     Icon(Icons.Default.FileDownload, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("تصدير CSV")
+                    Text("تصدير Excel")
                 }
             }
             
@@ -251,91 +245,64 @@ fun BudgetMainScreen() {
     }
 }
 
-fun validateInput(cat: String, amt: String): Boolean {
-    return cat.isNotBlank() && amt.isNotBlank() && amt.toDoubleOrNull() != null
-}
+fun validateInput(cat: String, amt: String) = cat.isNotBlank() && amt.isNotBlank() && amt.toDoubleOrNull() != null
+fun getCurrentDateTime(): String = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.US).format(Date())
 
-fun clearFields(clear: () -> Unit) {
-    clear()
-}
-
-fun getCurrentDateTime(): String {
-    val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.US)
-    return sdf.format(Date())
-}
-
-fun importCsv(context: Context, uri: Uri, transactions: MutableList<Transaction>) {
+fun importExcel(context: Context, uri: Uri, transactions: MutableList<Transaction>) {
     try {
         context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            val reader = BufferedReader(InputStreamReader(inputStream))
-            var line: String? = reader.readLine() // Header
+            val workbook = XSSFWorkbook(inputStream)
+            val sheet = workbook.getSheetAt(0)
             var count = 0
-            while (reader.readLine().also { line = it } != null) {
-                // محلل CSV متطور للتعامل مع الفواصل داخل الاقتباسات
-                val parts = parseCsvLine(line!!)
-                if (parts.size >= 6) {
-                    val category = parts[0]
-                    val currency = parts[1]
-                    val amount = parts[2].toDoubleOrNull() ?: 0.0
-                    val type = parts[3]
-                    val note = parts[4]
-                    val date = parts[5]
-                    
-                    transactions.add(Transaction(category, currency, amount, type, note, date))
-                    count++
-                }
+            
+            // تخطي الهيدر (Row 0)
+            for (i in 1..sheet.lastRowNum) {
+                val row = sheet.getRow(i) ?: continue
+                val category = row.getCell(0)?.toString() ?: ""
+                val currency = row.getCell(1)?.toString() ?: "SAR"
+                val amount = row.getCell(2)?.numericCellValue ?: 0.0
+                val type = row.getCell(3)?.toString() ?: ""
+                val note = row.getCell(4)?.toString() ?: ""
+                val date = row.getCell(5)?.toString() ?: ""
+                
+                transactions.add(Transaction(category, currency, amount, type, note, date))
+                count++
             }
-            Toast.makeText(context, "تم استيراد $count معاملة", Toast.LENGTH_LONG).show()
+            workbook.close()
+            Toast.makeText(context, "تم استيراد $count معاملة بنجاح", Toast.LENGTH_LONG).show()
         }
     } catch (e: Exception) {
-        Toast.makeText(context, "خطأ في الاستيراد: ${e.message}", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "خطأ في استيراد Excel: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
 
-// دالة مساعدة لتقسيم سطر CSV مع مراعاة الاقتباسات
-fun parseCsvLine(line: String): List<String> {
-    val result = mutableListOf<String>()
-    var curVal = StringBuilder()
-    var inQuotes = false
-    for (ch in line.toCharArray()) {
-        if (inQuotes) {
-            if (ch == '\"') {
-                inQuotes = false
-            } else {
-                curVal.append(ch)
-            }
-        } else {
-            if (ch == '\"') {
-                inQuotes = true
-            } else if (ch == ',') {
-                result.add(curVal.toString().trim())
-                curVal = StringBuilder()
-            } else {
-                curVal.append(ch)
-            }
-        }
-    }
-    result.add(curVal.toString().trim())
-    return result
-}
-
-fun exportCsv(context: Context, uri: Uri, transactions: List<Transaction>) {
+fun exportExcel(context: Context, uri: Uri, transactions: List<Transaction>) {
     try {
         context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-            val writer = OutputStreamWriter(outputStream)
-            writer.write("category,currency,amount,type,note,date\n")
-            transactions.forEach { t ->
-                // إضافة اقتباسات إذا كانت القيمة تحتوي على فاصلة
-                val category = if (t.category.contains(",")) "\"${t.category}\"" else t.category
-                val note = if (t.note.contains(",")) "\"${t.note}\"" else t.note
-                val type = if (t.type.contains(",")) "\"${t.type}\"" else t.type
-                writer.write("$category,${t.currency},${t.amount},$type,$note,${t.date}\n")
+            val workbook = XSSFWorkbook()
+            val sheet = workbook.createSheet("Transactions")
+            
+            // الهيدر
+            val headerRow = sheet.createRow(0)
+            val headers = listOf("category", "currency", "amount", "type", "note", "date")
+            headers.forEachIndexed { index, title -> headerRow.createCell(index).setCellValue(title) }
+            
+            // البيانات
+            transactions.forEachIndexed { index, t ->
+                val row = sheet.createRow(index + 1)
+                row.createCell(0).setCellValue(t.category)
+                row.createCell(1).setCellValue(t.currency)
+                row.createCell(2).setCellValue(t.amount)
+                row.createCell(3).setCellValue(t.type)
+                row.createCell(4).setCellValue(t.note)
+                row.createCell(5).setCellValue(t.date)
             }
-            writer.flush()
-            writer.close()
-            Toast.makeText(context, "تم التصدير بنجاح", Toast.LENGTH_LONG).show()
+            
+            workbook.write(outputStream)
+            workbook.close()
+            Toast.makeText(context, "تم تصدير ملف Excel بنجاح", Toast.LENGTH_LONG).show()
         }
     } catch (e: Exception) {
-        Toast.makeText(context, "خطأ في التصدير: ${e.message}", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "خطأ في تصدير Excel: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
