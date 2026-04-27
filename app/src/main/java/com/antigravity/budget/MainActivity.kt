@@ -25,10 +25,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.apache.poi.ss.usermodel.*
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import java.io.InputStream
-import java.io.OutputStream
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -78,7 +74,7 @@ fun BudgetMainScreen() {
     var note by remember { mutableStateOf("") }
     var transactions = remember { mutableStateListOf<Transaction>() }
     
-    // مشغل اختيار ملف للاستيراد (Excel)
+    // مشغل اختيار ملف للاستيراد
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri ->
@@ -86,7 +82,7 @@ fun BudgetMainScreen() {
         }
     )
 
-    // مشغل حفظ ملف للتصدير (Excel)
+    // مشغل حفظ ملف للتصدير
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         onResult = { uri ->
@@ -97,7 +93,7 @@ fun BudgetMainScreen() {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("مدير الميزانية (Excel)", fontWeight = FontWeight.Bold) },
+                title = { Text("مدير الميزانية الشخصية", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = Color(0xFF1E1E1E)
                 )
@@ -161,7 +157,14 @@ fun BudgetMainScreen() {
                         Button(
                             onClick = {
                                 if (validateInput(category, amount)) {
-                                    val t = Transaction(category, "SAR", amount.toDouble(), "الدخل", note, getCurrentDateTime())
+                                    val t = Transaction(
+                                        category = category,
+                                        currency = "SAR",
+                                        amount = amount.toDouble(),
+                                        type = "الدخل",
+                                        note = note,
+                                        date = getCurrentDateTime()
+                                    )
                                     transactions.add(t)
                                     category = ""; amount = ""; note = ""
                                     Toast.makeText(context, "تمت إضافة الدخل", Toast.LENGTH_SHORT).show()
@@ -178,7 +181,14 @@ fun BudgetMainScreen() {
                         Button(
                             onClick = {
                                 if (validateInput(category, amount)) {
-                                    val t = Transaction(category, "SAR", -(amount.toDouble()), "النفقات", note, getCurrentDateTime())
+                                    val t = Transaction(
+                                        category = category,
+                                        currency = "SAR",
+                                        amount = -(amount.toDouble()),
+                                        type = "النفقات",
+                                        note = note,
+                                        date = getCurrentDateTime()
+                                    )
                                     transactions.add(t)
                                     category = ""; amount = ""; note = ""
                                     Toast.makeText(context, "تمت إضافة الصرف", Toast.LENGTH_SHORT).show()
@@ -203,13 +213,14 @@ fun BudgetMainScreen() {
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedButton(
-                    onClick = { importLauncher.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) },
+                    onClick = { importLauncher.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel")) },
                     modifier = Modifier.weight(1f).height(56.dp),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    border = ButtonDefaults.outlinedButtonBorder.copy(width = 1.dp)
                 ) {
                     Icon(Icons.Default.FileUpload, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("استيراد Excel")
+                    Text("استيراد إكسل")
                 }
 
                 Button(
@@ -217,7 +228,7 @@ fun BudgetMainScreen() {
                         if (transactions.isEmpty()) {
                             Toast.makeText(context, "لا توجد بيانات لتصديرها", Toast.LENGTH_SHORT).show()
                         } else {
-                            exportLauncher.launch("budget_report_${System.currentTimeMillis()}.xlsx")
+                            exportLauncher.launch("report_${System.currentTimeMillis()}.xlsx")
                         }
                     },
                     modifier = Modifier.weight(1f).height(56.dp),
@@ -226,7 +237,7 @@ fun BudgetMainScreen() {
                 ) {
                     Icon(Icons.Default.FileDownload, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("تصدير Excel")
+                    Text("تصدير إكسل")
                 }
             }
             
@@ -240,64 +251,78 @@ fun BudgetMainScreen() {
     }
 }
 
-fun validateInput(cat: String, amt: String) = cat.isNotBlank() && amt.isNotBlank() && amt.toDoubleOrNull() != null
-fun getCurrentDateTime(): String = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.US).format(Date())
+fun validateInput(cat: String, amt: String): Boolean {
+    return cat.isNotBlank() && amt.isNotBlank() && amt.toDoubleOrNull() != null
+}
 
+fun getCurrentDateTime(): String {
+    val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.US)
+    return sdf.format(Date())
+}
+
+// استيراد من إكسل
 fun importExcel(context: Context, uri: Uri, transactions: MutableList<Transaction>) {
     try {
         context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            val workbook = XSSFWorkbook(inputStream)
+            val workbook = org.apache.poi.xssf.usermodel.XSSFWorkbook(inputStream)
             val sheet = workbook.getSheetAt(0)
             var count = 0
             
-            // تخطي الهيدر (Row 0)
-            for (i in 1..sheet.lastRowNum) {
-                val row = sheet.getRow(i) ?: continue
-                val category = row.getCell(0)?.toString() ?: ""
-                val currency = row.getCell(1)?.toString() ?: "SAR"
-                val amount = row.getCell(2)?.numericCellValue ?: 0.0
-                val type = row.getCell(3)?.toString() ?: ""
-                val note = row.getCell(4)?.toString() ?: ""
-                val date = row.getCell(5)?.toString() ?: ""
-                
-                transactions.add(Transaction(category, currency, amount, type, note, date))
-                count++
+            val rowIterator = sheet.iterator()
+            if (rowIterator.hasNext()) rowIterator.next() // تخطي الهيدر
+            
+            while (rowIterator.hasNext()) {
+                val row = rowIterator.next()
+                if (row.lastCellNum >= 6) {
+                    val category = row.getCell(0)?.toString() ?: ""
+                    val currency = row.getCell(1)?.toString() ?: ""
+                    val amount = row.getCell(2)?.toString()?.toDoubleOrNull() ?: 0.0
+                    val type = row.getCell(3)?.toString() ?: ""
+                    val note = row.getCell(4)?.toString() ?: ""
+                    val date = row.getCell(5)?.toString() ?: ""
+                    
+                    transactions.add(Transaction(category, currency, amount, type, note, date))
+                    count++
+                }
             }
             workbook.close()
-            Toast.makeText(context, "تم استيراد $count معاملة بنجاح", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "تم استيراد $count معاملة", Toast.LENGTH_LONG).show()
         }
     } catch (e: Exception) {
-        Toast.makeText(context, "خطأ في استيراد Excel: ${e.message}", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "خطأ في الاستيراد: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
 
+// تصدير إلى إكسل
 fun exportExcel(context: Context, uri: Uri, transactions: List<Transaction>) {
     try {
-        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-            val workbook = XSSFWorkbook()
-            val sheet = workbook.createSheet("Transactions")
-            
-            // الهيدر
-            val headerRow = sheet.createRow(0)
-            val headers = listOf("category", "currency", "amount", "type", "note", "date")
-            headers.forEachIndexed { index, title -> headerRow.createCell(index).setCellValue(title) }
-            
-            // البيانات
-            transactions.forEachIndexed { index, t ->
-                val row = sheet.createRow(index + 1)
-                row.createCell(0).setCellValue(t.category)
-                row.createCell(1).setCellValue(t.currency)
-                row.createCell(2).setCellValue(t.amount)
-                row.createCell(3).setCellValue(t.type)
-                row.createCell(4).setCellValue(t.note)
-                row.createCell(5).setCellValue(t.date)
-            }
-            
-            workbook.write(outputStream)
-            workbook.close()
-            Toast.makeText(context, "تم تصدير ملف Excel بنجاح", Toast.LENGTH_LONG).show()
+        val workbook = org.apache.poi.xssf.usermodel.XSSFWorkbook()
+        val sheet = workbook.createSheet("Transactions")
+        
+        // الهيدر
+        val headerRow = sheet.createRow(0)
+        val columns = arrayOf("category", "currency", "amount", "type", "note", "date")
+        columns.forEachIndexed { index, title ->
+            headerRow.createCell(index).setCellValue(title)
         }
+        
+        // البيانات
+        transactions.forEachIndexed { index, t ->
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setCellValue(t.category)
+            row.createCell(1).setCellValue(t.currency)
+            row.createCell(2).setCellValue(t.amount)
+            row.createCell(3).setCellValue(t.type)
+            row.createCell(4).setCellValue(t.note)
+            row.createCell(5).setCellValue(t.date)
+        }
+        
+        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+            workbook.write(outputStream)
+        }
+        workbook.close()
+        Toast.makeText(context, "تم التصدير بنجاح", Toast.LENGTH_LONG).show()
     } catch (e: Exception) {
-        Toast.makeText(context, "خطأ في تصدير Excel: ${e.message}", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "خطأ في التصدير: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
